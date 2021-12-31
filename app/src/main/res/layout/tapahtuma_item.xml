@@ -8,21 +8,12 @@
         android:id="@+id/tvLahto"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_weight="3"
+        android:layout_weight="5"
         android:text=" "
         android:textAppearance="@style/TextAppearance.AppCompat.Large" />
 
     <TextView
         android:id="@+id/tvEka"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_weight="3"
-        android:text=""
-        android:gravity="right"
-        android:textAppearance="@style/TextAppearance.AppCompat.Large" />
-
-    <TextView
-        android:id="@+id/tvToka"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="3"

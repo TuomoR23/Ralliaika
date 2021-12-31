@@ -30,7 +30,7 @@ public class Tapahtuma {
     @NonNull
     @Override
     public String toString() {
-        return getDate(lahtoaika,"HH:mm:ss.SSS") + ", " + (ekaaika - lahtoaika) + ", " + (tokaaika - lahtoaika);
+        return getDate(lahtoaika,"HH:mm:ss.SSS") + ", " + (ekaaika - lahtoaika) + ", 0" ;
     }
 
     public String toString(String format) {
@@ -40,9 +40,9 @@ public class Tapahtuma {
                     + getDate(ekaaika,"HH:mm:ss.SSS") + " "
                     + getDate(tokaaika,"HH:mm:ss.SSS");
         else if (format.equals("tallennus"))
-            ret = getDate(lahtoaika,"dd.MM.yyyy-HH:mm:ss") + " "
+            ret = getDate(lahtoaika,"dd.MM.yyyy-HH:mm:ss,SS") + " "
                     + String.format("%.3f",((ekaaika - lahtoaika) / 1000.0f)) + " "
-                    + String.format("%.3f",((tokaaika - lahtoaika) / 1000.0f))
+                    + String.format("%.3f",((0) / 1000.0f))
                     + " " + msg;
 
         return ret;
@@ -55,7 +55,7 @@ public class Tapahtuma {
         int eka = 0, toka = 0;
         String[] split = line.split(" ");
 
-        SimpleDateFormat formatter = new SimpleDateFormat("dd.MM.yyyy-HH:mm:ss");
+        SimpleDateFormat formatter = new SimpleDateFormat("dd.MM.yyyy-HH:mm:ss,SS");
         try {
             Date dt = formatter.parse(split[0]);
             lahtoaika = dt.getTime();

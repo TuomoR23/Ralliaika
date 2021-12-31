@@ -10,6 +10,7 @@ import android.content.Context;
 import android.content.Intent;
 
 import android.os.Build;
+import android.os.Handler;
 import android.util.Log;
 
 import org.altbeacon.beacon.BeaconManager;
@@ -36,6 +37,9 @@ public class BeaconReferenceApplication extends Application implements Bootstrap
     ArrayList<Region> regions = new ArrayList<>();
     int aktiivinen = 1;
 
+    private final Handler enableHandler = new Handler();
+    private Runnable enableMonitoringTask;
+
     public long viimeisinAika1 = 0, viimeisinAika2 = 0;
 
     public void onCreate() {
@@ -43,7 +47,6 @@ public class BeaconReferenceApplication extends Application implements Bootstrap
         super.onCreate();
         BeaconManager beaconManager = org.altbeacon.beacon.BeaconManager.getInstanceForApplication(this);
         regions.add(new Region("backgroundRegion",Identifier.parse("0x45203d"), null, Identifier.parse("4660")));
-        regions.add(new Region("backgroundRegion",Identifier.parse("0x45203d"), null, Identifier.parse("4661")));
 
         // By default the AndroidBeaconLibrary will only find AltBeacons.  If you wish to make it
         // find a different type of beacon, you must specify the byte layout for that beacon's
@@ -66,7 +69,7 @@ public class BeaconReferenceApplication extends Application implements Bootstrap
         // ID3: ponderin tunniste
 //0201040dff6a110208 416a61 00 31 0401 c3
 
-     beaconManager.setDebug(true);
+        beaconManager.setDebug(true);
 
         Log.e(TAG,"onCreate parseri lisätty");
 
@@ -123,9 +126,19 @@ public class BeaconReferenceApplication extends Application implements Bootstrap
         // If you wish to test beacon detection in the Android Emulator, you can use code like this:
         // BeaconManager.setBeaconSimulator(new TimedBeaconSimulator() );
         // ((TimedBeaconSimulator) BeaconManager.getBeaconSimulator()).createTimedSimulatedBeacons();
+
+        enableMonitoringTask = new Runnable() {
+            @Override
+            public void run() {
+                Log.e(TAG,"EnableMonitoringTask");
+                enableMonitoring(false);
+            }
+
+        };
     }
 
     public void disableMonitoring() {
+        Log.e(TAG,"disableMonitoring");
         if (regionBootstrap != null) {
             regionBootstrap.disable();
             regionBootstrap = null;
@@ -134,18 +147,22 @@ public class BeaconReferenceApplication extends Application implements Bootstrap
         viimeisinAika2 = 0;
     }
     public void enableMonitoring() {
+        Log.e(TAG,"enableMonitoring");
         viimeisinAika1 = 0;
         viimeisinAika2 = 0;
-
-//        Region region = new Region("backgroundRegion",
-//                Identifier.parse("0x45203d"), null, Identifier.parse("4660"));
-                //null, null, null);
-                //Identifier.parse("0x45203d"), null, null);
-//                Identifier.parse("0x45203d"), null, Identifier.parse("4661"));
-        //regionBootstrap = new RegionBootstrap(this, region);
         regionBootstrap = new RegionBootstrap(this, regions.get(0));
         aktiivinen = 1;
     }
+    public void enableMonitoring(boolean nollaa) {
+        Log.e(TAG,"enableMonitoring parametrillä nollaa:" + nollaa);
+        if (nollaa) {
+            viimeisinAika1 = 0;
+            viimeisinAika2 = 0;
+            aktiivinen = 1;
+        }
+        regionBootstrap = new RegionBootstrap(this, regions.get(0));
+    }
+
     public boolean isMonitoringOn () {
         return !(regionBootstrap == null);
     }
@@ -166,12 +183,33 @@ public class BeaconReferenceApplication extends Application implements Bootstrap
         return formatter.format(calendar.getTime());
     }
 
+    private void kaytaKuuntelijaPoisPaalta() {
+        Log.e(TAG,"kaytaKuuntelijaPoisPaalta");
+
+        if (regionBootstrap != null) {
+            regionBootstrap.disable();
+            regionBootstrap = null;
+        }
+        enableHandler.postAtTime(enableMonitoringTask,50000);
+        //regionBootstrap = new RegionBootstrap(this, regions.get(0));
+
+    }
     @Override
     public void didEnterRegion(Region arg0) {
-        if (aktiivinen == 1)
+        Log.e(TAG,"didEnterRegion aktiivinen:" + aktiivinen + " aika ed:" + (System.currentTimeMillis() - viimeisinAika1));
+        if (aktiivinen == 1) { // lähtökennon ylitys
             viimeisinAika1 = System.currentTimeMillis();
-        else
-            viimeisinAika2 = System.currentTimeMillis();
+           // kaytaKuuntelijaPoisPaalta();
+        }
+        else {
+            // Tutkitaan tässä että on kulunut lähdöstä vähintään 10 sek
+            if (viimeisinAika1 > 0 && System.currentTimeMillis() - viimeisinAika1 > 15000) {
+                viimeisinAika2 = System.currentTimeMillis();
+            }
+            else {
+              //  kaytaKuuntelijaPoisPaalta();
+            }
+        }
 
         Log.e(TAG, "didEnterRegion arg0:" + arg0 + " " + getDate(viimeisinAika1,"HH:mm:ss.SSS")
                 + " " + getDate(viimeisinAika2,"HH:mm:ss.SSS"));
@@ -185,17 +223,7 @@ public class BeaconReferenceApplication extends Application implements Bootstrap
             // seen on its display
             logToDisplay("I see a beacon again" );
         }
-        Region region = new Region("backgroundRegion",
-//                Identifier.parse("0x416a61"), null, null);
-        //null, null, null);
-//        Identifier.parse("0x45203d"), null, null);
-                Identifier.parse("0x45203d"), null, Identifier.parse("4661"));
-//        regionBootstrap = new RegionBootstrap(this, region);
-        regionBootstrap.disable();
-        if (aktiivinen < 2)
-            regionBootstrap = new RegionBootstrap(this, regions.get(aktiivinen));
-        //else
-          //  disableMonitoring();
+
         aktiivinen = 2;
     }
 

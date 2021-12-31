@@ -179,8 +179,8 @@ public class MonitoringActivity extends Activity  {
 		try {
 			if (!BeaconManager.getInstanceForApplication(this).checkAvailability()) {
 				final AlertDialog.Builder builder = new AlertDialog.Builder(this);
-				builder.setTitle("Bluetooth not enabled");
-				builder.setMessage("Please enable bluetooth in settings and restart this application.");
+				builder.setTitle("Bluetooth ei ole päällä");
+				builder.setMessage("Laita bluetooth päälle ja käynnistä sovellus uudelleen.");
 				builder.setPositiveButton(android.R.string.ok, null);
 				builder.setOnDismissListener(new DialogInterface.OnDismissListener() {
 					@Override

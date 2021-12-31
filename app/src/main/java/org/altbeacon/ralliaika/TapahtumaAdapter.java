@@ -7,7 +7,9 @@ import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
 import android.widget.TextView;
 
+import java.time.Duration;
 import java.util.ArrayList;
+import java.util.concurrent.TimeUnit;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -29,29 +31,39 @@ public class TapahtumaAdapter extends ArrayAdapter<Tapahtuma> {
         }
         TextView tvLahto = (TextView) convertView.findViewById(R.id.tvLahto);
         TextView tvEka = (TextView) convertView.findViewById(R.id.tvEka);
-        TextView tvToka = (TextView) convertView.findViewById(R.id.tvToka);
         TextView tvViesti = (TextView) convertView.findViewById(R.id.tvMsg);
 
-        if (debug.lahtoaika > 0) tvLahto.setText(Tapahtuma.getDate(debug.lahtoaika,"HH:mm:ss"));
+        if (debug.lahtoaika > 0) tvLahto.setText(Tapahtuma.getDate(debug.lahtoaika,"HH:mm:ss,SS"));
         else tvLahto.setText("");
 
         long aika = 0;
         if (debug.lahtoaika > 0 && debug.ekaaika > 0) {
             aika = debug.ekaaika - debug.lahtoaika;
-            tvEka.setText(String.format("%.3f",(aika / 1000.0f)));
+            // Muotoillaan nätiksi
+            tvEka.setText(millistoSTR(aika));
         }
         else tvEka.setText("");
-
-        aika = 0;
-        if (debug.lahtoaika > 0 && debug.tokaaika > 0) {
-            aika = debug.tokaaika - debug.lahtoaika;
-            tvToka.setText(String.format("%.3f",(aika / 1000.0f)));
-        }
-        else tvToka.setText("");
 
         tvViesti.setText(debug.msg);
 
 
         return convertView;
+    }
+    private String millistoSTR (long millis) {
+        String ret = "";
+        if (millis > 0) {
+            long intMillis = millis;
+            long mm = TimeUnit.MILLISECONDS.toMinutes(intMillis);
+            intMillis -= TimeUnit.MINUTES.toMillis(mm);
+            long ss = TimeUnit.MILLISECONDS.toSeconds(intMillis);
+            intMillis -= TimeUnit.SECONDS.toMillis(ss);
+
+            String stringInterval = "%d:%02d,%03d";
+
+            ret = String.format(stringInterval , mm, ss, intMillis);
+            ret = ret.substring(0,ret.length() - 1);
+        }
+
+        return ret;
     }
 }

@@ -10,6 +10,7 @@ import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
+import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
@@ -17,11 +18,13 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.PorterDuff;
 import android.graphics.Typeface;
+import android.location.LocationManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.RemoteException;
+import android.provider.Settings;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -33,6 +36,7 @@ import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.TextView;
 
@@ -57,11 +61,15 @@ import java.util.Calendar;
 import java.util.Collection;
 import java.util.List;
 
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
+
 public class Ranging2Activity extends Activity implements BeaconConsumer {
     protected static final String TAG = "Ranging2Activity";
     private BeaconManager beaconManager = BeaconManager.getInstanceForApplication(this);
     private static final int PERMISSION_REQUEST_FINE_LOCATION = 1;
     private static final int PERMISSION_REQUEST_BACKGROUND_LOCATION = 2;
+    private static final int PERMISSION_REQUEST_WRITE_EXTERNAL_STORAGE = 3;
     private static final int VALI_REQUEST = 10;
 
     // Näissä kahdess listassa pitää olla ponderit samassa järjestyksessä
@@ -71,7 +79,7 @@ public class Ranging2Activity extends Activity implements BeaconConsumer {
     TapahtumaAdapter tapahtumatadapter;
 
     private Button btnLahtoon;
-
+    LinearLayout llKelloJaNappula;
     private ImageView img1, img2, img3, img4, img5;
     Canvas c;
     Paint paint = new Paint();
@@ -84,9 +92,11 @@ public class Ranging2Activity extends Activity implements BeaconConsumer {
     private ListView llTapahtumat;
     BeaconReferenceApplication application;
 
+    private long gLahtoaika = 0;
     private Tapahtuma tapahtuma;
     private ArrayList<Tapahtuma> tapahtumalist = new ArrayList<>();
 
+    private String version = "";
     String gFilebase = "kii";
     String gFilename = "";
     private int tila = 0; // 0 - perus, 1 - lahtoon, sytytetään valot, 2 - lahti, kun valot sammui
@@ -100,16 +110,14 @@ public class Ranging2Activity extends Activity implements BeaconConsumer {
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); // pidetään näyttö päällä
         PiilotaBaarit();
-        img1 = (ImageView) findViewById((R.id.img1));
-        img2 = (ImageView) findViewById((R.id.img2));
-        img3 = (ImageView) findViewById((R.id.img3));
-        img4 = (ImageView) findViewById((R.id.img4));
-        img5 = (ImageView) findViewById((R.id.img5));
+
 
         tvHH = (TextView) findViewById(R.id.tvHH);
         tvMM = (TextView) findViewById(R.id.tvMM);
         tvSS = (TextView) findViewById(R.id.tvSS);
+        llKelloJaNappula = (LinearLayout) findViewById(R.id.llKelloJaNappula);
 
+      //  checkLocationPermission();
         btnLahtoon = (Button) findViewById(R.id.btnLahtoon);
         paint.setColor(Color.BLACK);
         paint.setTextSize(30);
@@ -123,33 +131,49 @@ public class Ranging2Activity extends Activity implements BeaconConsumer {
         lTapahtumat = (ListView) findViewById(R.id.listTapahtumat);
 
         naytaLahtobutton();
-
+        HaeVersioNimi();
         lBeaconit.setAdapter(omabeaconadapter);
         lTapahtumat.setAdapter(tapahtumatadapter);
         verifyBluetooth();
-
-        final ViewTreeObserver obs = img1.getViewTreeObserver();
-        obs.addOnPreDrawListener(new ViewTreeObserver.OnPreDrawListener() {
-            @Override
-            public boolean onPreDraw() {
-                img1.getViewTreeObserver().removeOnPreDrawListener(this);
-                Log.d(TAG, "onPreDraw tv height is " + img1.getHeight()); // bad for performance, remove on production
-                height = img1.getHeight();
-                width = img1.getWidth();
-
-                Log.e(TAG, "height:" + height + " width:" + width);
-
-                Bitmap newImage = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
-
-                c = new Canvas(newImage);
-
-                img1.setImageBitmap(newImage);
-
-                PiirraVali();
-                return true;
-            }
-        });
+        locationEnabled();
+//        final ViewTreeObserver obs = img1.getViewTreeObserver();
+//        obs.addOnPreDrawListener(new ViewTreeObserver.OnPreDrawListener() {
+//            @Override
+//            public boolean onPreDraw() {
+//                img1.getViewTreeObserver().removeOnPreDrawListener(this);
+//                Log.d(TAG, "onPreDraw tv height is " + img1.getHeight()); // bad for performance, remove on production
+//                height = img1.getHeight();
+//                width = img1.getWidth();
+//
+//                Log.e(TAG, "height:" + height + " width:" + width);
+//
+//                Bitmap newImage = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+//
+//                c = new Canvas(newImage);
+//
+//                img1.setImageBitmap(newImage);
+//
+//                PiirraVali();
+//                return true;
+//            }
+//        });
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            Log.e(TAG,"Build.VERSION.SDK_INT >= Build.VERSION_CODES.M");
+            if (this.checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                    == PackageManager.PERMISSION_GRANTED) {
+                Log.e(TAG,"WRITE_EXTERNLA permissio on granted");
+            }
+            else {
+                Log.e(TAG,"WRITE_EXTERNAL permissio EI OLE granted");
+               // if (!this.shouldShowRequestPermissionRationale(Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
+                    requestPermissions(new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE},
+                            PERMISSION_REQUEST_WRITE_EXTERNAL_STORAGE);
+              //  }
+               // else {
+              //      Log.e(TAG,"PERMISSION PYYNTÖ EI ONNISTUNUT");
+               // }
+            }
+
             if (this.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
                     == PackageManager.PERMISSION_GRANTED) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -172,6 +196,7 @@ public class Ranging2Activity extends Activity implements BeaconConsumer {
                             });
                             builder.show();
                         } else {
+                            /* Uskotaan että on saatu myös backgroup oikeudet. Oma samsung toimii näin android 11
                             final AlertDialog.Builder builder = new AlertDialog.Builder(this);
                             builder.setTitle("Functionality limited");
                             builder.setMessage("Since background location access has not been granted, this app will not be able to discover beacons in the background.  Please go to Settings -> Applications -> Permissions and grant background location access to this app.");
@@ -184,6 +209,7 @@ public class Ranging2Activity extends Activity implements BeaconConsumer {
 
                             });
                             builder.show();
+                             */
                         }
                     }
                 }
@@ -217,9 +243,18 @@ public class Ranging2Activity extends Activity implements BeaconConsumer {
             public void run() {
                 // TODO Auto-generated method stub
                 long l = System.currentTimeMillis();
+
+                if (gLahtoaika > 0) {
+                    l -= gLahtoaika;
+                    llKelloJaNappula.setBackgroundColor(Color.GREEN);
+                }
+                else {
+                    llKelloJaNappula.setBackgroundColor(Color.WHITE);
+                }
                 now.setTimeInMillis(l);
 
                 int hh = now.get(Calendar.HOUR_OF_DAY);
+                if (gLahtoaika > 0) hh = 0;
                 int mm = now.get(Calendar.MINUTE);
                 int ss = now.get(Calendar.SECOND);
 
@@ -247,14 +282,14 @@ public class Ranging2Activity extends Activity implements BeaconConsumer {
                     } else if (ss == 59) {
                         sytyta(5);
                     } else if (ss == 0) {
-                        tapahtuma.lahtoaika = System.currentTimeMillis();
-                        tapahtuma.lahtoaika -= tapahtuma.lahtoaika % 100;
-                        if (!tapahtumalist.contains(tapahtuma)) tapahtumalist.add(0,tapahtuma);
-                        tapahtumatadapter.notifyDataSetChanged();
+//                        tapahtuma.lahtoaika = System.currentTimeMillis();
+//                        tapahtuma.lahtoaika -= tapahtuma.lahtoaika % 100;
+//                        if (!tapahtumalist.contains(tapahtuma)) tapahtumalist.add(0,tapahtuma);
+//                        tapahtumatadapter.notifyDataSetChanged();
 
-                        sytyta(0);
-                        tila = 2;
-                        naytaLahtobutton();
+//                        sytyta(0);
+//                        tila = 2;
+//                        naytaLahtobutton();
                     }
 
                     if (iVali == 30) {
@@ -269,14 +304,14 @@ public class Ranging2Activity extends Activity implements BeaconConsumer {
                         } else if (ss == 29) {
                             sytyta(5);
                         } else if (ss == 30) {
-                            tapahtuma.lahtoaika = System.currentTimeMillis();
-                            tapahtuma.lahtoaika -= tapahtuma.lahtoaika % 100;
-                            if (!tapahtumalist.contains(tapahtuma)) tapahtumalist.add(0,tapahtuma);
-                            tapahtumatadapter.notifyDataSetChanged();
-
-                            sytyta(0);
-                            tila = 2;
-                            naytaLahtobutton();
+//                            tapahtuma.lahtoaika = System.currentTimeMillis();
+//                            tapahtuma.lahtoaika -= tapahtuma.lahtoaika % 100;
+//                            if (!tapahtumalist.contains(tapahtuma)) tapahtumalist.add(0,tapahtuma);
+//                            tapahtumatadapter.notifyDataSetChanged();
+//
+//                            sytyta(0);
+//                            tila = 2;
+//                            naytaLahtobutton();
                         }
                     }
                 }
@@ -352,7 +387,7 @@ public class Ranging2Activity extends Activity implements BeaconConsumer {
                 "yyyy-MM-dd");
         Calendar cal = Calendar.getInstance();
         sFilename = gFilebase + "_" + filedateFormat.format(cal.getTime()) + ".txt";
-        File path = new File(Environment.getExternalStorageDirectory().toString() + "/AAA");
+        File path = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).toString() + "/A1");
         File file = new File(path, sFilename);
         sRet = sFilename;
 
@@ -373,7 +408,7 @@ public class Ranging2Activity extends Activity implements BeaconConsumer {
         Log.e(TAG,"lataaFile:" + filename);
         tapahtumalist.clear();
         try {
-            File path = new File(Environment.getExternalStorageDirectory().toString() + "/AAA");
+            File path = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).toString() + "/A1");
             File file = new File(path,gFilename);
 
             BufferedReader br = new BufferedReader(new FileReader(file));
@@ -385,7 +420,7 @@ public class Ranging2Activity extends Activity implements BeaconConsumer {
                     if (tap.lahtoaika > 0)
                         tapahtumalist.add(0, tap);
                 }catch (Exception ex) {
-                    Log.e(TAG,"ex:" + ex.getMessage());
+                    Log.e(TAG,"LataaFile ex:" + ex.getMessage());
                 }
             }
             br.close();
@@ -411,34 +446,34 @@ public class Ranging2Activity extends Activity implements BeaconConsumer {
 
     private void sytyta(int lkm) {
 
-        if (lkm == 1) {
-            img1.setBackgroundColor(Color.RED);
-        } else if (lkm == 2) {
-            img1.setBackgroundColor(Color.RED);
-            img2.setBackgroundColor(Color.RED);
-        } else if (lkm == 3) {
-            img1.setBackgroundColor(Color.RED);
-            img2.setBackgroundColor(Color.RED);
-            img3.setBackgroundColor(Color.RED);
-        } else if (lkm == 4) {
-            img1.setBackgroundColor(Color.RED);
-            img2.setBackgroundColor(Color.RED);
-            img3.setBackgroundColor(Color.RED);
-            img4.setBackgroundColor(Color.RED);
-        } else if (lkm == 5) {
-            img1.setBackgroundColor(Color.RED);
-            img2.setBackgroundColor(Color.RED);
-            img3.setBackgroundColor(Color.RED);
-            img4.setBackgroundColor(Color.RED);
-            img5.setBackgroundColor(Color.RED);
-        } else if (lkm == 0) {
-            img1.setBackgroundColor(Color.WHITE);
-            img2.setBackgroundColor(Color.WHITE);
-            img3.setBackgroundColor(Color.WHITE);
-            img4.setBackgroundColor(Color.WHITE);
-            img5.setBackgroundColor(Color.WHITE);
-
-        }
+//        if (lkm == 1) {
+//            img1.setBackgroundColor(Color.RED);
+//        } else if (lkm == 2) {
+//            img1.setBackgroundColor(Color.RED);
+//            img2.setBackgroundColor(Color.RED);
+//        } else if (lkm == 3) {
+//            img1.setBackgroundColor(Color.RED);
+//            img2.setBackgroundColor(Color.RED);
+//            img3.setBackgroundColor(Color.RED);
+//        } else if (lkm == 4) {
+//            img1.setBackgroundColor(Color.RED);
+//            img2.setBackgroundColor(Color.RED);
+//            img3.setBackgroundColor(Color.RED);
+//            img4.setBackgroundColor(Color.RED);
+//        } else if (lkm == 5) {
+//            img1.setBackgroundColor(Color.RED);
+//            img2.setBackgroundColor(Color.RED);
+//            img3.setBackgroundColor(Color.RED);
+//            img4.setBackgroundColor(Color.RED);
+//            img5.setBackgroundColor(Color.RED);
+//        } else if (lkm == 0) {
+//            img1.setBackgroundColor(Color.WHITE);
+//            img2.setBackgroundColor(Color.WHITE);
+//            img3.setBackgroundColor(Color.WHITE);
+//            img4.setBackgroundColor(Color.WHITE);
+//            img5.setBackgroundColor(Color.WHITE);
+//
+//        }
 
 
     }
@@ -460,22 +495,31 @@ public class Ranging2Activity extends Activity implements BeaconConsumer {
         try {
             if (!BeaconManager.getInstanceForApplication(this).checkAvailability()) {
                 final AlertDialog.Builder builder = new AlertDialog.Builder(this);
-                builder.setTitle("Bluetooth not enabled");
-                builder.setMessage("Please enable bluetooth in settings and restart this application.");
-                builder.setPositiveButton(android.R.string.ok, null);
-                builder.setOnDismissListener(new DialogInterface.OnDismissListener() {
-                    @Override
-                    public void onDismiss(DialogInterface dialog) {
-                        //finish();
-                        //System.exit(0);
-                    }
-                });
+                builder.setTitle("Bluetooth ei ole päällä");
+                builder.setMessage("Laita bluetooth päälle asetuksista ja käynnistä sovellus uudelleen.");
+//                builder.setPositiveButton(android.R.string.ok, null);
+                builder.setPositiveButton( "Settings" , new
+                        DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick (DialogInterface paramDialogInterface , int paramInt) {
+                                startActivity( new Intent(Settings.ACTION_BLUETOOTH_SETTINGS )) ;
+                            }
+                        });
+                builder.setNegativeButton( "Cancel" , null );
+
+//                builder.setOnDismissListener(new DialogInterface.OnDismissListener() {
+//                    @Override
+//                    public void onDismiss(DialogInterface dialog) {
+//                        //finish();
+//                        //System.exit(0);
+//                    }
+//                });
                 builder.show();
             }
         } catch (RuntimeException e) {
             final AlertDialog.Builder builder = new AlertDialog.Builder(this);
-            builder.setTitle("Bluetooth LE not available");
-            builder.setMessage("Sorry, this device does not support Bluetooth LE." + e.getMessage());
+            builder.setTitle("Bluetooth LE ei ole käytettävissä");
+            builder.setMessage("Sorry, tämä laite ei tuo Bluetooth LE:tä." + e.getMessage());
             builder.setPositiveButton(android.R.string.ok, null);
             builder.setOnDismissListener(new DialogInterface.OnDismissListener() {
 
@@ -523,11 +567,12 @@ public class Ranging2Activity extends Activity implements BeaconConsumer {
     private void naytaLahtobutton() {
 
         if (tila == 1 || tila == 2) {
-            btnLahtoon.setBackgroundColor(Color.GREEN);
+            btnLahtoon.setBackgroundColor(Color.YELLOW);
             btnLahtoon.setText("KESKEYTÄ");
         } else {
             btnLahtoon.setBackgroundColor(Color.GRAY);
             btnLahtoon.setText("LÄHTÖÖN");
+            llKelloJaNappula.setBackgroundColor(Color.WHITE);
         }
     }
     @Override
@@ -553,10 +598,10 @@ public class Ranging2Activity extends Activity implements BeaconConsumer {
         naytaLahtobutton();
         if (tila == 1) {
             tapahtuma = new Tapahtuma();
-
             application.enableMonitoring();
         }
         else if (tila == 0) {
+            gLahtoaika = 0;
             tapahtuma = null;
             application.disableMonitoring();
             sytyta(0);
@@ -573,7 +618,7 @@ public class Ranging2Activity extends Activity implements BeaconConsumer {
             OmaBeacon tmpOma;
             if (beacons.size() > 0) {
                 Beacon tmpBeacon;
-                //Log.e(TAG,"didRange count:" + tmpbeaconList.size());
+                Log.e(TAG,"didRange count:" + tmpbeaconList.size());
                 // Käydään saatu lista läpi
                 // lisätään listalle uudet
                 // lisätään myös omalle listalle
@@ -584,49 +629,54 @@ public class Ranging2Activity extends Activity implements BeaconConsumer {
                     tmpBeacon = beacons.iterator().next();
 
                     // Hylätään tuntemattomat
-                    if (!(tmpBeacon.getId3().toString().equals("4660") || tmpBeacon.getId3().toString().equals("4661"))) {
+                    if (!(tmpBeacon.getId3().toString().equals("4660") )) {
                         beacons.remove(tmpBeacon);
                         continue;
                     }
+                    else {
+
+                    }
                     if (application.isMonitoringOn()) {
-                        aika1 = application.viimeisinAika1;
+                        aika1 = application.viimeisinAika1; // lähtökennon ylitys
                         aika2 = application.viimeisinAika2;
 
-                        // Vähennetään ohikulkuaika ja laitetaan tapahtumalle
-                        if (tmpBeacon.getId3().toString().equals("4660")) {
-                            aika1 -= tmpBeacon.getId2().toInt();
-                            Log.e(TAG,"Vähennetiin 4660:" + tmpBeacon.getId2());
-                            if (tapahtuma.ekaaika == 0) {
-                                tapahtuma.ekaaika = aika1;
-                                if (!tapahtumalist.contains(tapahtuma))
-                                    tapahtumalist.add(0,tapahtuma);
-                                tapahtumatadapter.notifyDataSetChanged();
+                        boolean bNayta = true;
 
-                            }
+                        // Vähennetään ohikulkuaika ja laitetaan tapahtumalle
+                        if (tapahtuma.lahtoaika == 0) {
+                            aika1 -= tmpBeacon.getId2().toInt();
+                            Log.e(TAG,"Vähennetiin lähtöajasta:" + tmpBeacon.getId2());
+                            tapahtuma.lahtoaika = aika1;
+                            gLahtoaika = aika1;
+                            llKelloJaNappula.setBackgroundColor(Color.GREEN);
+
+                            if (!tapahtumalist.contains(tapahtuma))
+                                tapahtumalist.add(0,tapahtuma);
+                            tapahtumatadapter.notifyDataSetChanged();
                         }
-                        if (tmpBeacon.getId3().toString().equals("4661")) {
-                          //  if (tapahtuma.ekaaika == 0)continue;
+                        else if (tapahtuma.ekaaika == 0 /*&& (System.currentTimeMillis() - tapahtuma.lahtoaika) > 15000*/ && aika2 > 0) {
+                            // Beacon libraryn takia pitää olla vähintään 15 sek, että beacon ehtii poistua välillä, muuten ei tule viestiä
                             aika2 -= tmpBeacon.getId2().toInt();
-                            Log.e(TAG,"Vähennetiin 4661:" + tmpBeacon.getId2());
-                            if (tapahtuma.tokaaika == 0) {
-                                tapahtuma.tokaaika = aika2;
+                            Log.e(TAG,"Vähennetiin maaliajasta:" + tmpBeacon.getId2() + " lähtöajasta:" + (System.currentTimeMillis() - tapahtuma.lahtoaika));
+                            if (tapahtuma.ekaaika == 0) {
+                                tapahtuma.ekaaika = aika2;
                                 application.disableMonitoring();
-                                if (tapahtuma.lahtoaika == 0) {
-                                    if (tapahtumalist.contains(tapahtuma))
-                                        tapahtumalist.remove(tapahtuma);
-                                }
-                                else if (!tapahtumalist.contains(tapahtuma))
+                                 if (!tapahtumalist.contains(tapahtuma))
                                     tapahtumalist.add(0, tapahtuma);
                                 tapahtumatadapter.notifyDataSetChanged();
                                 tallennaTapahtuma(tapahtuma,gFilename);
                                 tila = 0;
+                                gLahtoaika = 0;
                                 naytaLahtobutton();
                             }
                         }
+                        else
+                            bNayta = false;
 
-                        Log.e(TAG,"dide aika id3:" + tmpBeacon.getId3() + " " + BeaconReferenceApplication.getDate(aika1,"HH:mm:ss.SSS")
-                            + " " + BeaconReferenceApplication.getDate(aika2,"HH:mm:ss.SSS")
-                            + " " + tapahtuma.toString("kello"));
+                        if (bNayta)
+                            Log.e(TAG,"dide aika id3:" + tmpBeacon.getId3() + " " + BeaconReferenceApplication.getDate(aika1,"HH:mm:ss.SSS")
+                                + " " + BeaconReferenceApplication.getDate(aika2,"HH:mm:ss.SSS")
+                                + " " + tapahtuma.toString("kello"));
                     }
 
 
@@ -704,6 +754,18 @@ public class Ranging2Activity extends Activity implements BeaconConsumer {
                 .setNegativeButton("Ei", null)
                 .show();
     }
+    private void HaeVersioNimi () {
+        try {
+            PackageManager manager = getPackageManager();
+            PackageInfo info = manager.getPackageInfo(
+                    getPackageName(), 0);
+            version = info.versionName;
+            ((TextView) findViewById(R.id.tvVersio)).setText("V:" + version);
+        }
+        catch (Exception e) {
+
+        }
+    }
     @Override
     public void onBeaconServiceConnect() {
 
@@ -737,10 +799,10 @@ public class Ranging2Activity extends Activity implements BeaconConsumer {
         //Calendar cal = Calendar.getInstance();
         //filename += "_" + filedateFormat.format(cal.getTime()) + ".txt";
 
-        File path = new File(Environment.getExternalStorageDirectory().toString() + "/AAA");
+        File path = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).toString() + "/A1");
         File file = new File(path,filename);
 
-        // Make sure the Pictures directory exists.
+        // Make sure the download/A1 directory exists.
         try {
             path.mkdirs();
             if (!file.exists())
@@ -766,6 +828,109 @@ public class Ranging2Activity extends Activity implements BeaconConsumer {
             // TODO Auto-generated catch block
             e.printStackTrace();
             Log.e(TAG, "Write ERROR:" + e.getMessage());
+        }
+    }
+    public static final int MY_PERMISSIONS_REQUEST_LOCATION = 99;
+
+    public boolean checkLocationPermission() {
+        if (ActivityCompat.checkSelfPermission(this,
+                Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+//                Manifest.permission.ACCESS_FINE_LOCATION)
+                != PackageManager.PERMISSION_GRANTED) {
+
+            // Should we show an explanation?
+            if (ActivityCompat.shouldShowRequestPermissionRationale(this,
+//                    Manifest.permission.ACCESS_FINE_LOCATION)) {
+                    Manifest.permission.ACCESS_BACKGROUND_LOCATION)) {
+
+                // Show an explanation to the user *asynchronously* -- don't block
+                // this thread waiting for the user's response! After the user
+                // sees the explanation, try again to request the permission.
+                new AlertDialog.Builder(this)
+                        .setTitle("title_location_permission")
+                        .setMessage("text_location_permission")
+                        .setPositiveButton("OK", new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface dialogInterface, int i) {
+                                //Prompt the user once explanation has been shown
+                                ActivityCompat.requestPermissions(Ranging2Activity.this,
+//                                        new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
+                                        new String[]{Manifest.permission.ACCESS_BACKGROUND_LOCATION},
+                                        MY_PERMISSIONS_REQUEST_LOCATION);
+                            }
+                        })
+                        .create()
+                        .show();
+
+
+            } else {
+                // No explanation needed, we can request the permission.
+                ActivityCompat.requestPermissions(this,
+                        new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
+                        MY_PERMISSIONS_REQUEST_LOCATION);
+            }
+            return false;
+        } else {
+            return true;
+        }
+    }
+    private void locationEnabled () {
+        LocationManager lm = (LocationManager)
+                getSystemService(Context. LOCATION_SERVICE ) ;
+        boolean gps_enabled = false;
+        boolean network_enabled = false;
+        try {
+            gps_enabled = lm.isProviderEnabled(LocationManager. GPS_PROVIDER ) ;
+        } catch (Exception e) {
+            e.printStackTrace() ;
+        }
+        try {
+            network_enabled = lm.isProviderEnabled(LocationManager. NETWORK_PROVIDER ) ;
+        } catch (Exception e) {
+            e.printStackTrace() ;
+        }
+        if (!gps_enabled && !network_enabled) {
+            new AlertDialog.Builder(Ranging2Activity. this )
+                    .setMessage( "GPS Päälle" )
+                    .setPositiveButton( "Settings" , new
+                            DialogInterface.OnClickListener() {
+                                @Override
+                                public void onClick (DialogInterface paramDialogInterface , int paramInt) {
+                                    startActivity( new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS )) ;
+                                }
+                            })
+                    .setNegativeButton( "Cancel" , null )
+                    .show() ;
+        }
+    }
+    @Override
+    public void onRequestPermissionsResult(int requestCode,
+                                           String permissions[], int[] grantResults) {
+        switch (requestCode) {
+            case MY_PERMISSIONS_REQUEST_LOCATION: {
+                // If request is cancelled, the result arrays are empty.
+                if (grantResults.length > 0
+                        && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+
+                    // permission was granted, yay! Do the
+                    // location-related task you need to do.
+                    if (ContextCompat.checkSelfPermission(this,
+                            Manifest.permission.ACCESS_FINE_LOCATION)
+                            == PackageManager.PERMISSION_GRANTED) {
+
+                        //Request location updates:
+                        //locationManager.requestLocationUpdates(provider, 400, 1, this);
+                    }
+
+                } else {
+
+                    // permission denied, boo! Disable the
+                    // functionality that depends on this permission.
+
+                }
+                return;
+            }
+
         }
     }
 }
